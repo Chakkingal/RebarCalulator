@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rebar Cutting Optimizer</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+
+    <!-- Include External Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.4/xlsx.full.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css"
+    />
+
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+      }
+
+      .card {
+        margin-bottom: 15px;
+      }
+
+      .mobile-view {
+        display: none;
+      }
+
+      .desktop-view {
+        display: block;
+      }
+
+      @media (max-width: 768px) {
+        .mobile-view {
+          display: block;
+        }
+
+        .desktop-view {
+          display: none;
+        }
+      }
+
+      .highlight {
+        color: red;
+        font-weight: bold;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <h2 class="text-center">Rebar Cutting Optimizer</h2>
+      <div class="mb-3">
+        <input
+          type="file"
+          id="fileInput"
+          accept=".xlsx,.xls"
+          class="form-control"
+        />
+        <button class="btn btn-primary mt-2" onclick="processFile()">
+          Optimize
+        </button>
+      </div>
+
+      <div id="resultContainer">
+        <div class="desktop-view">
+          <table id="resultTable" class="table table-bordered table-striped">
+            <thead>
+              <tr>
+                <th>Rod Number</th>
+                <th>Lengths Used (cm)</th>
+                <th>Usage Details</th>
+                <th>Total Used (cm)</th>
+                <th>Waste (cm)</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="mobile-view" id="cardView"></div>
+      </div>
+      <div id="downloadDiv" class="mb-3" style="display: none">
+        <select id="downloadOption" class="form-select mb-3 w-auto">
+          <option value="full">Download Full Data</option>
+          <option value="current">Download Current View</option>
+        </select>
+        <!-- <button id="downloadPDFBtn" class="btn btn-danger" onclick="downloadPDF()">Download PDF</button> -->
+        <button
+          id="downloadPDFBtn"
+          class="btn btn-danger"
+          onclick="downloadPDF()"
+        >
+          <span id="downloadText">Download PDF</span>
+          <span
+            id="downloadSpinner"
+            class="spinner-border spinner-border-sm"
+            role="status"
+            aria-hidden="true"
+            style="display: none"
+          ></span>
+        </button>
+      </div>
+    </div>
+
+    <script>
+   function processFile() {
+  const fileInput = document.getElementById("fileInput").files[0];
+  if (!fileInput) return alert("Please select an Excel file.");
+
+  // ✅ Disable "Optimize" button to prevent double clicks
+  const optimizeBtn = document.querySelector('button[onclick="processFile()"]');
+  optimizeBtn.disabled = true;
+  optimizeBtn.innerText = "Processing...";
+
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    const data = new Uint8Array(e.target.result);
+    const workbook = XLSX.read(data, { type: "array" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 }); // ✅ Read headers
+
+    if (jsonData.length === 0) {
+      alert("Error: The uploaded file is empty.");
+      resetButton(optimizeBtn);
+      return;
+    }
+
+    // ✅ Extract headers from the first row
+    const headers = jsonData[0].map((h) => h.toLowerCase().trim()); // Convert headers to lowercase
+    if (headers[0] !== "size" || headers[1] !== "nos") {
+      alert('Error: The first two columns must have headers "Size" and "Nos".');
+      resetButton(optimizeBtn);
+      return;
+    }
+
+    // ✅ Convert sheet to JSON starting from the second row (ignoring headers)
+    const formattedData = XLSX.utils.sheet_to_json(sheet);
+    if (formattedData.length === 0) {
+      alert("Error: No data found in the file.");
+      resetButton(optimizeBtn);
+      return;
+    }
+
+    optimizeRebarUsage(formattedData);
+
+    // ✅ Enable "Optimize" button & Show "Download PDF" button
+    resetButton(optimizeBtn);
+    document.getElementById("downloadDiv").style.display = "inline-block";
+  };
+
+  reader.readAsArrayBuffer(fileInput);
+}
+
+// ✅ Helper function to reset the "Optimize" button
+function resetButton(button) {
+  button.disabled = false;
+  button.innerText = "Optimize";
+}
+
+
+      function optimizeRebarUsage(data) {
+        const standardLength = 1200; // cm
+        let rods = [],
+          remainders = [],
+          rodGroups = [];
+        let requiredLengths = data.map((row) => [
+          parseFloat(row[Object.keys(row)[0]]),
+          row[Object.keys(row)[1]],
+        ]);
+        requiredLengths.sort((a, b) => b[0] - a[0]);
+
+        requiredLengths.forEach(([size, qty]) => {
+          for (let i = 0; i < qty; i++) {
+            let placed = false;
+            for (let j = 0; j < remainders.length; j++) {
+              if (remainders[j] >= size) {
+                rods[j].push(size);
+                rodGroups[j].push(
+                  `Used ${size} cm from remaining ${remainders[j]} cm`
+                );
+                remainders[j] -= size;
+                placed = true;
+                break;
+              }
+            }
+            if (!placed) {
+              rods.push([size]);
+              remainders.push(standardLength - size);
+              rodGroups.push([`New rod, used ${size} cm`]);
+            }
+          }
+        });
+        displayResults(rods, rodGroups, remainders);
+      }
+
+      function displayResults(rods, rodGroups, remainders) {
+        let tableBody = "";
+        let cardView = "";
+
+        rods.forEach((rod, i) => {
+          let rodNumber = i + 1; // Numeric rod number
+
+          // ✅ Fix floating-point precision before formatting
+          let totalUsed = (
+            Math.round(rod.reduce((a, b) => a + b, 0) * 100) / 100
+          ).toFixed(2);
+          let waste = (Math.round(remainders[i] * 100) / 100).toFixed(2);
+          let formattedRod = rod.map((val) =>
+            (Math.round(val * 100) / 100).toFixed(2)
+          );
+
+          // ✅ Make numbers bold & red in Usage Details
+          let formattedGroups = rodGroups[i]
+            .map((entry) =>
+              entry.replace(
+                /(\d+\.\d+|\d+)/g,
+                (match) =>
+                  `<span class="highlight">${(
+                    Math.round(parseFloat(match) * 100) / 100
+                  ).toFixed(2)}</span>`
+              )
+            )
+            .join(" | ");
+
+          tableBody += `<tr>
+            <td data-order="${rodNumber}">Rod ${rodNumber}</td>
+            <td>${formattedRod
+              .map((num) => `<span class="highlight">${num}</span>`)
+              .join(", ")}</td>
+            <td>${formattedGroups}</td>
+            <td><span class="highlight">${totalUsed}</span></td>
+            <td><span class="highlight">${waste}</span></td>
+        </tr>`;
+
+          cardView += `<div class='card p-3'>
+            <h5>Rod ${rodNumber}</h5>
+            <p><strong>Lengths Used:</strong> ${formattedRod
+              .map((num) => `<span class="highlight">${num}</span>`)
+              .join(", ")}</p>
+            <p><strong>Usage Details:</strong> ${formattedGroups}</p>
+            <p><strong>Total Used:</strong> <span class="highlight">${totalUsed}</span> cm</p>
+            <p><strong>Waste:</strong> <span class="highlight">${waste}</span> cm</p>
+        </div>`;
+        });
+
+        document.querySelector("#resultTable tbody").innerHTML = tableBody;
+
+        // ✅ Corrected Sorting for Rod Numbers
+        $("#resultTable").DataTable({
+          destroy: true, // Ensure table refreshes properly
+          columnDefs: [{ targets: 0, type: "num" }], // Force numerical sorting
+        });
+
+        document.getElementById("cardView").innerHTML = cardView;
+      }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      function downloadPDF() {
+  const downloadBtn = document.getElementById("downloadPDFBtn");
+  const downloadText = document.getElementById("downloadText");
+  const downloadSpinner = document.getElementById("downloadSpinner");
+  const downloadOption = document.getElementById("downloadOption").value;
+
+  // ✅ Disable "Download PDF" button to prevent double clicks
+  downloadBtn.disabled = true;
+  downloadText.innerText = "Generating PDF...";
+  downloadSpinner.style.display = "inline-block";
+
+  const cloudinaryURL = "https://res.cloudinary.com/dutl6gkzn/image/upload/v1741866777/INSIGHT_LOGO_without_bg_bqdtb3.png";
+
+  // ✅ Convert Cloudinary Image to Base64 before using it
+  convertImageToBase64(cloudinaryURL, function (base64Image) {
+    const tableData = [];
+    const headers = [];
+    document.querySelectorAll("#resultTable thead tr th").forEach((th) =>
+      headers.push(th.innerText.trim())
+    );
+
+    const table = $("#resultTable").DataTable();
+
+    if (downloadOption === "full") {
+      table.rows({ search: "none" }).every(function () {
+        let rowData = [];
+        this.nodes()
+          .to$()
+          .find("td")
+          .each(function () {
+            rowData.push($(this).text().trim());
+          });
+        tableData.push(rowData);
+      });
+    } else if (downloadOption === "current") {
+      table.rows({ page: "current", search: "applied" }).every(function () {
+        let rowData = [];
+        this.nodes()
+          .to$()
+          .find("td")
+          .each(function () {
+            rowData.push($(this).text().trim());
+          });
+        tableData.push(rowData);
+      });
+    }
+
+    if (tableData.length === 0) {
+      throw new Error("No data found in the table.");
+    }
+
+    const numColumns = headers.length;
+    tableData.forEach((row, index) => {
+      if (row.length !== numColumns) {
+        throw new Error(
+          `Row ${index + 1} has ${row.length} columns, but expected ${numColumns}.`
+        );
+      }
+    });
+
+    // ✅ Define PDF Content with watermark
+    const docDefinition = {
+      pageSize: "A4",
+      pageOrientation: "landscape",
+      background: function () {
+        return {
+          image: "watermarkImg",
+          width: 500,
+          opacity: 0.1,
+          alignment: "center",
+          margin: [0, 100],
+        };
+      },
+      header: {
+        text: "Optimized Rebar Cutting Length",
+        style: "header",
+        alignment: "center",
+        margin: [0, 10, 0, 10],
+      },
+      footer: function (currentPage, pageCount) {
+        return {
+          text: `${currentPage} of ${pageCount}`,
+          alignment: "right",
+          margin: [10, 10, 10, 10],
+        };
+      },
+      content: [
+        {
+          table: {
+            headerRows: 1,
+            widths: Array(numColumns).fill("*"),
+            body: [headers, ...tableData],
+          },
+        },
+      ],
+      styles: {
+        header: { fontSize: 16, bold: true },
+        footer: { fontSize: 10 },
+      },
+      images: { watermarkImg: base64Image }, // ✅ Use dynamically loaded Base64
+      defaultStyle: {
+        fontSize: 10,
+        margin: [0, 5],
+      },
+    };
+
+    // ✅ Generate and Download PDF
+    pdfMake.createPdf(docDefinition).download("Optimized_Rebar_Cutting_Length.pdf");
+
+    // ✅ Re-enable Download Button
+    downloadBtn.disabled = false;
+    downloadText.innerText = "Download PDF";
+    downloadSpinner.style.display = "none";
+  });
+}
+
+// ✅ Function to Convert Cloudinary Image to Base64
+function convertImageToBase64(url, callback) {
+  fetch(url)
+    .then((res) => res.blob())
+    .then((blob) => {
+      const reader = new FileReader();
+      reader.onloadend = () => callback(reader.result);
+      reader.readAsDataURL(blob);
+    })
+    .catch((err) => {
+      console.error("Error loading image:", err);
+      alert("Error loading watermark image.");
+    });
+}
+
+
+
+    </script>
+  </body>
+</html>
