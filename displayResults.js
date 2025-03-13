@@ -25,7 +25,7 @@ function displayResults(rods, rodGroups, remainders) {
         </tr>`;
 
         cardView += `<div class='card p-3'>
-            <h5>Rod ${rodNumber}</h5>
+            <h5># ${rodNumber}</h5>
             <p><strong>Lengths Used:</strong> ${formattedRod.map(num => `<span class="highlight">${num}</span>`).join(", ")}</p>
             <p><strong>Usage Details:</strong> ${formattedGroups}</p>
             <p><strong>Total Used:</strong> <span class="highlight">${totalUsed}</span> cm</p>
