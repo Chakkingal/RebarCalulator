@@ -241,7 +241,7 @@ function resetButton(button) {
             .join(" | ");
 
           tableBody += `<tr>
-            <td data-order="${rodNumber}">Rod ${rodNumber}</td>
+            <td data-order="${rodNumber}">${rodNumber}</td>
             <td>${formattedRod
               .map((num) => `<span class="highlight">${num}</span>`)
               .join(", ")}</td>
