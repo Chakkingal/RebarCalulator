@@ -1,52 +1,43 @@
-function displayResults(rods, rodGroups, remainders) {
+function displayResults(results) {
     let tableBody = "";
     let cardView = "";
 
-    rods.forEach((rod, i) => {
+    results.forEach(({ dia, rods, rodGroups, remainders }) => {
+      rods.forEach((rod, i) => {
         let rodNumber = i + 1;
-        let totalUsed = (Math.round(rod.reduce((a, b) => a + b, 0) * 100) / 100).toFixed(2);
-        let waste = (Math.round(remainders[i] * 100) / 100).toFixed(2);
-        let formattedRod = rod.map((val) => (Math.round(val * 100) / 100).toFixed(2));
-
+        let totalUsed = rod.reduce((a, b) => a + b, 0).toFixed(2);
+        let waste = remainders[i].toFixed(2);
+        let formattedRod = rod.map(val => `<span class='highlight'>${val.toFixed(2)}</span>`).join(", ");
         let formattedGroups = rodGroups[i]
-            .map((entry) =>
-                entry.replace(/(\d+\.\d+|\d+)/g, (match) => 
-                    `<span class="highlight">${(Math.round(parseFloat(match) * 100) / 100).toFixed(2)}</span>`
-                )
-            )
-            .join(" | ");
+          .map(entry => entry.replace(/(\d+\.\d+|\d+)/g, match => `<span class='highlight'>${parseFloat(match).toFixed(2)}</span>`))
+          .join(" | ");
 
         tableBody += `<tr>
-            <td>${rodNumber}</td>
-            <td>${formattedRod.map(num => `<span class="highlight">${num}</span>`).join(", ")}</td>
-            <td>${formattedGroups}</td>
-            <td><span class="highlight">${totalUsed}</span></td>
-            <td><span class="highlight">${waste}</span></td>
+          <td>${dia}</td>
+          <td>${rodNumber}</td>
+          <td>${formattedRod}</td>
+          <td>${formattedGroups}</td>
+          <td><span class='highlight'>${totalUsed}</span></td>
+          <td><span class='highlight'>${waste}</span></td>
         </tr>`;
 
         cardView += `<div class='card p-3'>
-            <h5># ${rodNumber}</h5>
-            <p><strong>Lengths Used:</strong> ${formattedRod.map(num => `<span class="highlight">${num}</span>`).join(", ")}</p>
-            <p><strong>Usage Details:</strong> ${formattedGroups}</p>
-            <p><strong>Total Used:</strong> <span class="highlight">${totalUsed}</span> cm</p>
-            <p><strong>Waste:</strong> <span class="highlight">${waste}</span> cm</p>
+          <h5>Rod ${rodNumber} - Dia ${dia}</h5>
+          <p><strong>Lengths Used:</strong> ${formattedRod}</p>
+          <p><strong>Usage Details:</strong> ${formattedGroups}</p>
+          <p><strong>Total Used:</strong> <span class='highlight'>${totalUsed}</span> cm</p>
+          <p><strong>Waste:</strong> <span class='highlight'>${waste}</span> cm</p>
         </div>`;
+      });
     });
 
-    $("#resultTable tbody").html(tableBody);
-    $("#cardView").html(cardView);
+    document.querySelector("#resultTable tbody").innerHTML = tableBody;
+    document.getElementById("cardView").innerHTML = cardView;
 
-    // ✅ Properly Initialize DataTable with Filtering
-    if (!$.fn.DataTable.isDataTable("#resultTable")) {
-        $("#resultTable").DataTable({
-            destroy: true,
-            searching: true,  // ✅ Ensure filtering is enabled
-            paging: true,
-            ordering: true,
-            info: true,
-            columnDefs: [{ targets: 0, type: "num" }], // Numeric sorting for first column
-        });
-    } else {
-        $("#resultTable").DataTable().clear().rows.add($(tableBody)).draw();
-    }
-}
+    const table = $('#resultTable').DataTable();
+
+    $('.column-filter').on('keyup', function () {
+      const columnIndex = $(this).closest('th').index();
+      table.column(columnIndex).search(this.value).draw();
+    });
+  }

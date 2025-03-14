@@ -1,34 +1,46 @@
 function optimizeRebarUsage(data) {
     const standardLength = 1200; // cm
-    let rods = [],
-      remainders = [],
-      rodGroups = [];
-    let requiredLengths = data.map((row) => [
-      parseFloat(row[Object.keys(row)[0]]),
-      row[Object.keys(row)[1]],
-    ]);
-    requiredLengths.sort((a, b) => b[0] - a[0]);
-
-    requiredLengths.forEach(([size, qty]) => {
-      for (let i = 0; i < qty; i++) {
-        let placed = false;
-        for (let j = 0; j < remainders.length; j++) {
-          if (remainders[j] >= size) {
-            rods[j].push(size);
-            rodGroups[j].push(
-              `Used ${size} cm from remaining ${remainders[j]} cm`
-            );
-            remainders[j] -= size;
-            placed = true;
-            break;
+    let results = [];
+    let diaMapping = {};
+    
+    data.forEach(({ dia, size, nos }) => {
+      if (!diaMapping[dia]) diaMapping[dia] = [];
+      diaMapping[dia].push({ size, qty: nos });
+    });
+  
+    let rodsSummary = {}; // Corrected rod summary calculation
+  
+    Object.entries(diaMapping).forEach(([dia, lengths]) => {
+      let rods = [], remainders = [], rodGroups = [];
+  
+      lengths.sort((a, b) => b.size - a.size);
+  
+      lengths.forEach(({ size, qty }) => {
+        for (let i = 0; i < qty; i++) {
+          let placed = false;
+          for (let j = 0; j < remainders.length; j++) {
+            if (remainders[j] >= size) {
+              rods[j].push(size);
+              rodGroups[j].push(`Used ${size.toFixed(2)} cm from remaining ${remainders[j].toFixed(2)} cm`);
+              remainders[j] -= size;
+              placed = true;
+              break;
+            }
+          }
+          if (!placed) {
+            rods.push([size]);
+            remainders.push(standardLength - size);
+            rodGroups.push([`New rod, used ${size.toFixed(2)} cm`]);
           }
         }
-        if (!placed) {
-          rods.push([size]);
-          remainders.push(standardLength - size);
-          rodGroups.push([`New rod, used ${size} cm`]);
-        }
-      }
+      });
+  
+      results.push({ dia, rods, rodGroups, remainders });
+  
+      // ✅ Correct Rod Summary: Count the actual rods used for each diameter
+      rodsSummary[dia] = rods.length;
     });
-    displayResults(rods, rodGroups, remainders);
+  
+    displayResults(results);
+    displaySummaryTables(data, rodsSummary);
   }
